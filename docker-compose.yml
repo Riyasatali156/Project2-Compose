@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  # DinD Service: Docker inside Docker for Jenkins to execute Docker commands
+  dind:
+    image: docker:20-dind
+    container_name: dind
+    privileged: true  # Required for Docker-in-Docker
+    environment:
+      DOCKER_TLS_CERTDIR: /certs  # Enable Docker TLS certificate for secure communication
+    volumes:
+      - dind-certs:/certs/client  # Mount certificates
+      - jenkins-data:/var/jenkins_home  # Persistent storage for Jenkins
+    networks:
+      - jenkins-network  # Attach to Jenkins network
+    ports:
+      - "2375:2375"  # Expose Docker API port
+
+  # Jenkins Service: CI/CD server that will manage builds and deployments
+  jenkins:
+    image: jenkins/jenkins:lts-jdk11  # Official Jenkins LTS with JDK 11
+    container_name: jenkins
+    privileged: true  # Allow Jenkins to interact with Docker daemon
+    user: root  # Run Jenkins as root user to allow privileged operations
+    environment:
+      DOCKER_HOST: "tcp://docker:2375"  # Tell Jenkins to connect to DinD
+      DOCKER_CERT_PATH: /certs/client  # Path to certificates for secure Docker connection
+      DOCKER_TLS_VERIFY: 1  # Enable TLS verification
+    volumes:
+      - jenkins-data:/var/jenkins_home  # Jenkins data volume for persistence
+      - /var/run/docker.sock:/var/run/docker.sock  # Allow Jenkins to access Docker socket
+    networks:
+      - jenkins-network  # Attach to the same network as DinD
+    ports:
+      - "8080:8080"  # Expose Jenkins on port 8080
+      - "50000:50000"  # For Jenkins agent communication
+
+# Volumes for storing Jenkins data and Docker certificates
+volumes:
+  jenkins-data: {}
+  dind-certs: {}
+
+# Define the custom Jenkins network
+networks:
+  jenkins-network: {}
