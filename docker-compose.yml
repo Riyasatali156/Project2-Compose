@@ -1,45 +1,48 @@
-version: '3.8'
-
 services:
-  # DinD Service: Docker inside Docker for Jenkins to execute Docker commands
+  # Docker-In-Docker (DinD) Service
   dind:
-    image: docker:20-dind
+    image: docker:24.0-dind
     container_name: dind
-    privileged: true  # Required for Docker-in-Docker
+    privileged: true
+    user: root
     environment:
-      DOCKER_TLS_CERTDIR: /certs  # Enable Docker TLS certificate for secure communication
+      - DOCKER_TLS_CERTDIR=/certs  # Enable TLS for Docker communication
     volumes:
-      - dind-certs:/certs/client  # Mount certificates
-      - jenkins-data:/var/jenkins_home  # Persistent storage for Jenkins
+      - docker-certs-ca:/certs/ca  # Certificate for Docker CA
+      - docker-certs-client:/certs/client  # Client certificate for Jenkins
+      - jenkins-data:/var/jenkins_home  # Persistent Jenkins data
     networks:
-      - jenkins-network  # Attach to Jenkins network
-    ports:
-      - "2375:2375"  # Expose Docker API port
+      jenkins-net:
+        aliases:
+          - docker  # Alias for Jenkins to access DinD via tcp://docker:2376
 
-  # Jenkins Service: CI/CD server that will manage builds and deployments
+  # Jenkins Service
   jenkins:
-    image: jenkins/jenkins:lts-jdk11  # Official Jenkins LTS with JDK 11
+    image: jenkins/jenkins:lts-jdk11
     container_name: jenkins
-    privileged: true  # Allow Jenkins to interact with Docker daemon
-    user: root  # Run Jenkins as root user to allow privileged operations
+    user: root  # Allow Jenkins to run Docker commands
     environment:
-      DOCKER_HOST: "tcp://docker:2375"  # Tell Jenkins to connect to DinD
-      DOCKER_CERT_PATH: /certs/client  # Path to certificates for secure Docker connection
-      DOCKER_TLS_VERIFY: 1  # Enable TLS verification
+      - DOCKER_HOST=tcp://docker:2376  # Jenkins connects to DinD using this address
+      - DOCKER_CERT_PATH=/certs/client  # Path to Docker client certs in Jenkins
+      - DOCKER_TLS_VERIFY=1  # Enable TLS verification for secure Docker communication
     volumes:
-      - jenkins-data:/var/jenkins_home  # Jenkins data volume for persistence
-      - /var/run/docker.sock:/var/run/docker.sock  # Allow Jenkins to access Docker socket
+      - docker-certs-client:/certs/client:ro  # Mount client certs as read-only
+      - jenkins-data:/var/jenkins_home  # Persistent Jenkins data storage
+      - /usr/bin/docker:/usr/bin/docker  # Link Docker binary for Jenkins
     networks:
-      - jenkins-network  # Attach to the same network as DinD
+      - jenkins-net
     ports:
-      - "8080:8080"  # Expose Jenkins on port 8080
-      - "50000:50000"  # For Jenkins agent communication
+      - "8080:8080"  # Jenkins web UI
+      - "50000:50000"  # Jenkins agent port
+    restart: unless-stopped  # Ensure Jenkins restarts on failure or reboot
 
-# Volumes for storing Jenkins data and Docker certificates
+# Define volumes for data persistence
 volumes:
-  jenkins-data: {}
-  dind-certs: {}
+  docker-certs-ca:  # Store CA certificates for Docker
+  docker-certs-client:  # Store client certificates for Jenkins-Docker communication
+  jenkins-data:  # Persistent Jenkins data
 
-# Define the custom Jenkins network
+# Define the network used by Jenkins and DinD
 networks:
-  jenkins-network: {}
+  jenkins-net:
+    driver: bridge
