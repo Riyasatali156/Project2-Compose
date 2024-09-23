@@ -1,45 +1,42 @@
 services:
   dind:
-    image: docker:24.0-dind
-    container_name: dind
+    image: docker:dind  #pull docker:dind image
+    privileged: true
     user: root
-    environment:
-      - DOCKER_TLS_CERTDIR=/certs
-    volumes:
-      - docker-certs-ca:/certs/ca
-      - docker-certs-client:/certs/client
-      - jenkins-data:/var/jenkins_home
-    networks:
-      jenkins-net:
+    networks:     # connects dind to the network named jenkins to allow communication with jenkins  services
+      jenkins:
         aliases:
           - docker
+    volumes:     # mounts and stores data inside the container
+      - docker-certs-ca:/certs/ca      # mounts volume for CA certificates
+      - docker-certs-client:/certs/client   # mounts volume for client certificates
+      - jenkins-data:/var/jenkins_home   
+    environment:
+      - DOCKER_TLS_CERTDIR=/certs     # environment variable for TLS certificate  management
 
-  jenkins:
-    image: jenkins/jenkins:lts-jdk11
-    container_name: jenkins
+  jenkins:      
+    image: jenkins/jenkins:lts-jdk11  # use the mentioned image
+    restart: unless-stopped
+    networks:
+      - jenkins
     user: root
     environment:
-      - DOCKER_HOST=tcp://docker:2376
-      - DOCKER-CERT_PATH=/certs/client
-      - DOCKER_TLS_VERIFY=1
+      - DOCKER_HOST=tcp://docker:2376  # environment variable for jenkins to communicate with dind securly.
+      - DOCKER_CERT_PATH=/certs/client
+      - DOCKER_TLS_VERIFY=1 
     volumes:
       - docker-certs-client:/certs/client:ro
       - jenkins-data:/var/jenkins_home
       - /usr/bin/docker:/usr/bin/docker
-    networks:
-      - jenkins-net
     ports:
-      - "8080:8080"
-      - "50000:50000"
-    restart: unless-stopped
-    depends_on:
-      - dind
+      - 8080:8080     #exposing the port of container (right side) to local machine (left side)
+      - 50000:50000
 
-volumes:
+volumes:    # create the peristant volume to store the jenkins and docker data
+  jenkins-data:
   docker-certs-ca:
   docker-certs-client:
-  jenkins-data:
 
 networks:
-  jenkins_net:
+  jenkins:     # network created with command docker network create for communication between jenkins and dind
     driver: bridge
